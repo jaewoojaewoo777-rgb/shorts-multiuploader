@@ -23,6 +23,7 @@ from .base import (
     VerifyOutcome,
     click_first,
     click_optional,
+    ensure_ai_label,
     fill_editor_exact,
     file_input_anywhere,
     first_match,
@@ -51,6 +52,12 @@ _NOTIFICATION_LATER = (
     'button:text-is("Not Now")',
 )
 _OK_INTERSTITIAL = ('role=button[name="확인"]', 'role=button[name="OK"]')
+# 실측(2026-10): "이제 동영상 게시물이 릴스로 공유됩니다" 안내는 작성 다이얼로그와 별개의
+# role=dialog 로 뜨므로 작성 다이얼로그로 스코핑하면 못 찾는다.
+_REELS_NOTICE_OK = (
+    'div[role="dialog"] button:text-is("확인")',
+    'div[role="dialog"] button:text-is("OK")',
+)
 _CROP_TOGGLE = (
     'button:has(svg[aria-label="자르기 선택"])',
     'div[role="button"]:has(svg[aria-label="자르기 선택"])',
@@ -72,8 +79,10 @@ _NEXT = (
 )
 _CAPTION = (
     'div[role="textbox"][aria-label*="문구"]',
+    'div[role="textbox"][aria-label*="캡션"]',  # 실측(2026-10): aria-label="캡션 추가..."
     'div[role="textbox"][aria-label*="caption" i]',
     'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
+    'div[role="textbox"][data-lexical-editor="true"]',
 )
 _PARTNERSHIP_SETTINGS = (
     'div[role="button"]:has-text("파트너십 레이블 및 광고")',
@@ -86,6 +95,12 @@ _PAID_PARTNERSHIP_SWITCH = (
     'div[role="switch"][aria-label*="paid partnership" i]',
     'input[type="checkbox"][aria-label*="유료 파트너십"]',
     'input[type="checkbox"][aria-label*="paid partnership" i]',
+)
+# AI 생성 콘텐츠 표시는 마지막 화면의 `고급 설정` 접이식 섹션 안에 있다.
+_AI_LABELS = ("AI 레이블 추가", "AI 정보 추가", "Add AI label", "AI info")
+_ADVANCED_SETTINGS = (
+    'div[role="button"]:has-text("고급 설정")',
+    'div[role="button"]:has-text("Advanced settings")',
 )
 # 주의 1: 배경 피드 게시물마다 svg(title=공유하기) 공유 아이콘이 있어서
 # 다이얼로그 스코핑 없이 :has-text 로 찾으면 피드 아이콘을 잘못 집는다(실측).
@@ -164,6 +179,16 @@ def _enable_paid_partnership(page: Page, dialog) -> None:
         )
 
 
+def _wait_crop_toggle(page: Page, dialog, timeout_s: int = 40) -> None:
+    """자르기 버튼이 보일 때까지 기다리며, 그 위를 덮는 릴스 안내창은 닫는다."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        click_optional(page, _REELS_NOTICE_OK, timeout_ms=500)
+        if _any_visible(dialog, _CROP_TOGGLE):
+            return
+        page.wait_for_timeout(1_000)
+
+
 def _wait_share_complete(page: Page) -> tuple[str, str]:
     """공유 클릭 후 완료 다이얼로그까지 대기.
 
@@ -203,16 +228,30 @@ def upload(page: Page, job: Job, steps: Steps, cfg) -> Outcome:
         click_optional(page, _NOTIFICATION_LATER, timeout_ms=5_000)
 
     with steps.step("composer", hint="좌측 만들기(+) → 게시물 → 파일 선택 창"):
-        click_first(page, _CREATE)
-        # 최신 UI 는 만들기 클릭 시 서브메뉴(게시물/AI)가 뜬다. 없으면 그대로 진행.
-        click_optional(page, _POST_MENU, timeout_ms=2_500)
-        # 이후 모든 조작은 작성 다이얼로그 안으로 스코핑(배경 피드 요소 오클릭 방지).
-        dialog = first_match(page, (_DIALOG,), timeout_ms=15_000)
+        # 실측(2026-10): 만들기 클릭 뒤 작성 창 대신 프로필 화면이 남는 경우가 있었다.
+        # 다이얼로그가 안 뜨면 홈으로 돌아가 한 번 더 시도한다(게시 전 단계라 안전).
+        for attempt in range(2):
+            if attempt:
+                page.goto(HOME_URL, wait_until="domcontentloaded")
+                page.wait_for_timeout(2_500)
+                require_no_login_redirect(page, _LOGIN_REDIRECTS, "instagram")
+                click_optional(page, _NOTIFICATION_LATER, timeout_ms=3_000)
+            click_first(page, _CREATE)
+            # 최신 UI 는 만들기 클릭 시 서브메뉴(게시물/AI)가 뜬다. 없으면 그대로 진행.
+            click_optional(page, _POST_MENU, timeout_ms=2_500)
+            # 이후 모든 조작은 작성 다이얼로그 안으로 스코핑(배경 피드 요소 오클릭 방지).
+            try:
+                dialog = first_match(page, (_DIALOG,), timeout_ms=15_000)
+                break
+            except PlaywrightTimeout:
+                if attempt:
+                    raise
         file_input_anywhere(page).set_input_files(str(job.file_path))
 
     with steps.step("crop-original", hint="자르기 메뉴에서 `원본` 선택(기본 1:1 크롭 방지)"):
         click_optional(page, _OK_INTERSTITIAL, scope=dialog, timeout_ms=4_000)  # "동영상은 릴스로 공유됩니다" 안내
-        click_first(page, _CROP_TOGGLE, scope=dialog, timeout_ms=40_000)
+        _wait_crop_toggle(page, dialog)
+        click_first(page, _CROP_TOGGLE, scope=dialog, timeout_ms=10_000)
         click_first(page, _ORIGINAL, scope=dialog)
         click_first(page, _NEXT, scope=dialog)
 
@@ -229,6 +268,10 @@ def upload(page: Page, job: Job, steps: Steps, cfg) -> Outcome:
             hint="Content policy requires Instagram's paid partnership label",
         ):
             _enable_paid_partnership(page, dialog)
+
+    if "ai-generated" in job.disclosures:
+        with steps.step("ai-label", hint="고급 설정 → AI 레이블 추가 토글. 확인 못 하면 공유하지 않는다"):
+            ensure_ai_label(page, "instagram", _AI_LABELS, scope=dialog, reveal=_ADVANCED_SETTINGS)
 
     with steps.step("share", hint="다이얼로그 우상단 공유하기(배경 피드의 공유 아이콘 아님)"):
         click_first(page, _SHARE, scope=dialog)

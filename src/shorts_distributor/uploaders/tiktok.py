@@ -21,6 +21,7 @@ from .base import (
     Steps,
     VerifyOutcome,
     click_optional,
+    ensure_ai_label,
     fill_editor_exact,
     file_input_anywhere,
     first_match,
@@ -70,6 +71,21 @@ _DISCLOSURE_SAVE = (
     'div[role="dialog"] button:has-text("Save")',
     'div[role="dialog"] button:has-text("계속")',
     'div[role="dialog"] button:has-text("Continue")',
+)
+# `더 보기` 아래 `AI 생성 콘텐츠` 토글. 켤 때 확인 모달이 뜰 수 있다.
+_AI_LABELS = ("AI 생성 콘텐츠", "AI-generated content")
+# 실측(2026-10): 콘텐츠 공개/AI 생성 콘텐츠 토글은 설정 카드의 `펼치기` 아래 접혀 있다.
+_AI_REVEAL = (
+    '[data-e2e="advanced_settings_container"] .more-btn',
+    'div:text-is("펼치기")',
+    'span:text-is("펼치기")',
+    'span:text-is("Show more")',
+    *_SHOW_MORE,
+)
+_AI_CONFIRM = (
+    'div[role="dialog"] button:has-text("켜기")',
+    'div[role="dialog"] button:has-text("Turn on")',
+    'div[role="dialog"] button:has-text("확인")',
 )
 _POST = (
     '[data-e2e="post_video_button"]',
@@ -173,6 +189,10 @@ def upload(page: Page, job: Job, steps: Steps, cfg) -> Outcome:
     if "branded-content" in job.disclosures:
         with steps.step("branded-content", hint="Content policy requires TikTok branded-content disclosure"):
             _enable_branded_content_disclosure(page)
+
+    if "ai-generated" in job.disclosures:
+        with steps.step("ai-label", hint="펼치기 → AI 생성 콘텐츠 토글. 확인 못 하면 게시하지 않는다"):
+            ensure_ai_label(page, "tiktok", _AI_LABELS, reveal=_AI_REVEAL, confirm=_AI_CONFIRM)
 
     with steps.step("post", hint="업로드 처리 완료 후 게시 버튼 활성화 대기"):
         post_button = first_match(page, _POST, timeout_ms=60_000)

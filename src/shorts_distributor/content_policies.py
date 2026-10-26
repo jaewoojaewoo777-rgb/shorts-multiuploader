@@ -16,8 +16,9 @@ from .youtube import VideoMeta
 
 TEXT_MODES = {"default", "caption", "title", "description"}
 SUPPORTED_DISCLOSURES = {
-    "instagram": {"paid-partnership"},
-    "tiktok": {"branded-content"},
+    "instagram": {"paid-partnership", "ai-generated"},
+    "tiktok": {"branded-content", "ai-generated"},
+    "naver": {"ai-generated"},
 }
 
 
@@ -82,10 +83,15 @@ def load_policy_rules(path: Path | None) -> list[dict]:
         match = rule.get("match")
         if not isinstance(match, dict):
             raise ValueError(f"{label}.match must be an object.")
+        always = match.get("always", False)
+        if not isinstance(always, bool):
+            raise ValueError(f"{label}.match.always must be true or false.")
         any_markers = _string_list(match.get("any"), f"{label}.match.any")
         all_markers = _string_list(match.get("all"), f"{label}.match.all")
-        if not any_markers and not all_markers:
-            raise ValueError(f"{label}.match needs at least one marker in any or all.")
+        if always and (any_markers or all_markers):
+            raise ValueError(f"{label}.match.always cannot be combined with any/all markers.")
+        if not always and not any_markers and not all_markers:
+            raise ValueError(f"{label}.match needs always: true or at least one marker in any or all.")
 
         if "platforms" in rule:
             platforms = _string_list(rule["platforms"], f"{label}.platforms", allow_empty=False)
@@ -132,6 +138,7 @@ def evaluate_content_policies(
 
     for rule in rules:
         match = rule["match"]
+        # always: 채널 전체에 적용되는 규칙(예: 모든 영상이 AI 생성 콘텐츠).
         any_markers = [marker.casefold() for marker in match.get("any", [])]
         all_markers = [marker.casefold() for marker in match.get("all", [])]
         if any_markers and not any(marker in searchable for marker in any_markers):

@@ -201,6 +201,7 @@ class Cell:
     artifacts: list[str] = field(default_factory=list)
     file_path: str = ""
     post_text: str = ""
+    disclosures: list[str] = field(default_factory=list)
 
     def needs_agent(self) -> bool:
         return self.status not in CLOSED_STATUSES or self.verify_status == "missing"
@@ -226,6 +227,8 @@ class Cell:
             f"영상 파일: {self.file_path}",
             "게시 텍스트(이 텍스트만 정확히, ID/파일명/URL 붙이기 금지):",
             self.post_text,
+            *([f"필수 공개 표시(켜진 상태를 확인하지 못하면 게시 금지): {', '.join(self.disclosures)}"]
+              if self.disclosures else []),
             "규칙: 게시 전 최근 게시물에서 중복 확인, 화면의 파일/문구가 위 값과 일치할 때만 게시.",
             f"성공·검증 후 기록: uv run shorts-dist mark-uploaded {self.platform} {self.youtube_id} --url '<POST_URL>' --source agent",
         ]
@@ -573,6 +576,7 @@ def run_batch(
                 title=prepared["title"],
                 file_path=prepared.get("upload_file_path") or prepared["file_path"],
                 post_text=prepared["post_text"],
+                disclosures=list(prepared.get("disclosures", {}).get(platform, ())),
             ))
         if not lane:
             continue
@@ -720,7 +724,8 @@ def upload_single(
         _write_report(run_dir, report)
         return report
     cell = Cell(platform, video_id, title=prepared["title"],
-                file_path=str(upload_path), post_text=prepared["post_text"])
+                file_path=str(upload_path), post_text=prepared["post_text"],
+                disclosures=list(prepared.get("disclosures", {}).get(platform, ())))
     if get_uploader(platform) is None:
         cell.status = "agent-required"
         cell.hint = "레지스트리에 없는 플랫폼 — references/platform-guides.md 가이드로 에이전트가 직접 업로드"

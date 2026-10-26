@@ -440,3 +440,108 @@ def require_no_login_redirect(page: Page, patterns: Sequence[str], platform: str
             hint=f"`uv run shorts-dist login {platform}` 으로 다시 로그인한 뒤 재시도하세요.",
             blocker=True,
         )
+
+
+AI_LABEL_STEP = "ai-label"
+_SWITCH_MARK = "data-shorts-ai-switch"
+_SWITCH_CONTROLS = '[role="switch"], input[type="checkbox"], [aria-checked], [aria-pressed]'
+
+
+def _ai_label_failure(platform: str, message: str) -> StepFailure:
+    # blocker=True: 같은 플랫폼의 다음 영상도 같은 화면에서 똑같이 막히므로 레인 전체를
+    # 멈추고, 다른 플랫폼 레인은 계속 진행한다.
+    return StepFailure(
+        AI_LABEL_STEP,
+        message,
+        hint=(
+            f"게시하지 않음(fail closed). {platform} 작성 화면에서 AI 생성 콘텐츠 표시 토글을 "
+            "사람이 확인해야 합니다. 토글 없이 수동 게시하지 말고 사용자에게 알리세요."
+        ),
+        blocker=True,
+    )
+
+
+def _switch_state(locator: Locator) -> str:
+    return locator.evaluate(
+        # 실측(Instagram): input[role=switch]가 checked 대신 aria-checked 로 상태를
+        # 표시한다 — aria 속성이 있으면 그것을 우선한다.
+        "el => {"
+        " const v = el.getAttribute('aria-checked') ?? el.getAttribute('aria-pressed');"
+        " if (v === 'true') return 'on'; if (v === 'false') return 'off';"
+        " if (el instanceof HTMLInputElement) return el.checked ? 'on' : 'off';"
+        " return 'unknown'; }"
+    )
+
+
+def ensure_ai_label(
+    page: Page,
+    platform: str,
+    labels: Sequence[str],
+    *,
+    scope: Locator | None = None,
+    reveal: Sequence[str] = (),
+    confirm: Sequence[str] = (),
+    timeout_ms: int = 10_000,
+) -> str:
+    """AI 생성 콘텐츠 표시 토글을 켜고 켜진 상태를 확인한다. 확인 못 하면 게시 금지.
+
+    라벨 텍스트에서 가장 가까운 단일 스위치를 찾는다. 같은 단계에서 스위치가 둘 이상
+    보이면(예: 옆의 광고 토글) 잘못 켤 수 있으므로 실패로 처리한다.
+    """
+    label_selectors = [f"text={label}" for label in labels]
+    try:
+        label_el = first_match(page, label_selectors, scope=scope, timeout_ms=3_000 if reveal else timeout_ms)
+    except PlaywrightTimeout:
+        label_el = None
+    if label_el is None and reveal:
+        click_optional(page, reveal, scope=scope, timeout_ms=4_000)
+        page.wait_for_timeout(600)
+        try:
+            label_el = first_match(page, label_selectors, scope=scope, timeout_ms=timeout_ms)
+        except PlaywrightTimeout:
+            label_el = None
+    if label_el is None:
+        raise _ai_label_failure(platform, f"AI 표시 토글 라벨을 찾지 못함: {list(labels)}")
+
+    label_el.scroll_into_view_if_needed()
+    root = scope if scope is not None else page
+    root.locator(f"[{_SWITCH_MARK}]").evaluate_all(
+        f"els => els.forEach(e => e.removeAttribute('{_SWITCH_MARK}'))"
+    )
+    found = label_el.evaluate(
+        "(el, [sel, mark]) => {"
+        " let node = el;"
+        " for (let i = 0; i < 6 && node; i++) {"
+        # 실측(TikTok): Switch__content[aria-checked] 안에 input[role=switch]가 중첩돼
+        # 있다 — 다른 후보에 포함된 후보는 같은 스위치로 보고 바깥 요소만 센다.
+        "  const all = [...node.querySelectorAll(sel)];"
+        "  const hits = all.filter(h => !all.some(o => o !== h && o.contains(h)));"
+        "  if (hits.length === 1) { hits[0].setAttribute(mark, '1'); return 'one'; }"
+        "  if (hits.length > 1) return 'many';"
+        "  node = node.parentElement;"
+        " }"
+        " return 'none'; }",
+        [_SWITCH_CONTROLS, _SWITCH_MARK],
+    )
+    if found != "one":
+        reason = "토글 후보가 여러 개라 특정 불가" if found == "many" else "라벨 근처에 토글이 없음"
+        raise _ai_label_failure(platform, f"AI 표시 토글을 특정하지 못함({reason})")
+    switch = root.locator(f"[{_SWITCH_MARK}]").first
+
+    state = _switch_state(switch)
+    if state == "unknown":
+        raise _ai_label_failure(platform, "AI 표시 토글의 켜짐/꺼짐 상태를 읽을 수 없음")
+    if state == "off":
+        try:
+            switch.click(timeout=3_000)
+        except Exception:
+            # 숨은 체크박스/움직이는 미리보기로 일반 클릭이 막히는 경우
+            switch.evaluate("el => el.click()")
+        page.wait_for_timeout(600)
+        if confirm:
+            click_optional(page, confirm, timeout_ms=3_000)
+            page.wait_for_timeout(400)
+        state = _switch_state(switch)
+    if state != "on":
+        raise _ai_label_failure(platform, "AI 표시 토글을 켰지만 켜진 상태가 확인되지 않음")
+    return "AI 생성 콘텐츠 표시 켜짐 확인"

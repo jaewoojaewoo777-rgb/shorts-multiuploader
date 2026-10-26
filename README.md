@@ -4,7 +4,7 @@ A reusable, code-first pipeline for cross-posting your own YouTube Shorts to
 Instagram, Threads, TikTok, LinkedIn, Facebook, and Naver Clip.
 
 Playwright handles the normal upload path with your locally authenticated Chrome
-profile. Codex Browser/Computer is a recovery layer for individual failed cells,
+profile. Claude in Chrome (Claude Code) is a recovery layer for individual failed cells,
 inconclusive verification, and platform UI changes. No creator handles, campaign
 names, cookies, or account URLs are built into this repository.
 
@@ -44,7 +44,7 @@ plan -> prepare -> content policy -> H.264 -> platform lanes
                                               |
                                       failed cell only
                                               v
-                                  Browser/Computer fallback
+                                  Claude in Chrome fallback
 ```
 
 The unit of work is one matrix cell, not the entire batch. A login failure on
@@ -52,7 +52,7 @@ Facebook can block the Facebook lane while Instagram and TikTok continue. A cell
 is never retried merely because an upload dialog disappeared; fresh platform
 verification must first show that the post is missing.
 
-See [architecture.md](.agents/skills/shorts-upload/references/architecture.md)
+See [architecture.md](.claude/skills/shorts-upload/references/architecture.md)
 for status semantics, ownership boundaries, and extension constraints.
 
 ## Requirements
@@ -62,7 +62,7 @@ for status semantics, ownership boundaries, and extension constraints.
 - `ffmpeg`, `ffprobe`, and `yt-dlp`
 - macOS is the primary tested environment; the Python and Playwright layers are
   portable, but profile and Chrome behavior should be verified on your OS
-- Codex Desktop with Browser/Computer tools only if you want agent recovery
+- Claude Code with the Claude in Chrome extension only if you want agent recovery
 
 ## Quick start
 
@@ -169,7 +169,7 @@ attention signal, not permission to abandon healthy lanes.
 
 Platform UIs change without notice. Selector candidates are intentionally kept
 as ordered lists, and failures capture both a screenshot and full HTML for
-repair. See [customization.md](.agents/skills/shorts-upload/references/customization.md)
+repair. See [customization.md](.claude/skills/shorts-upload/references/customization.md)
 before adding a platform or policy action.
 
 ## Safety rules
@@ -187,9 +187,10 @@ before adding a platform or policy action.
 
 ## Agent skill
 
-The reusable skill lives at
-[`.agents/skills/shorts-upload/SKILL.md`](.agents/skills/shorts-upload/SKILL.md).
-It keeps Browser/Computer usage focused on failed cells and documents the
+The Claude Code skill lives at
+[`.claude/skills/shorts-upload/SKILL.md`](.claude/skills/shorts-upload/SKILL.md)
+(the original Codex copy stays at `.agents/skills/shorts-upload/`).
+It keeps Claude in Chrome usage focused on failed cells and documents the
 self-healing selector workflow.
 
 ## Development

@@ -15,7 +15,7 @@ data/downloads/*
 !data/downloads/.gitkeep
 
 # Sensitive local login/session state. Keep these out of Git even when created
-# intentionally for Codex Desktop Browser/Computer work.
+# intentionally for Claude in Chrome recovery work.
 data/profiles/
 data/backups/
 data/*-auth.json

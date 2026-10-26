@@ -111,3 +111,48 @@ class ContentPolicyTest(TestCase):
             }, directory)
             with self.assertRaisesRegex(ValueError, "platforms"):
                 load_policy_rules(path)
+
+    def test_always_rule_applies_ai_label_to_every_video(self) -> None:
+        document = {
+            "version": 1,
+            "rules": [{
+                "name": "ai-generated-channel",
+                "match": {"always": True},
+                "platforms": ["instagram", "tiktok", "naver"],
+                "disclosures": {
+                    "instagram": ["ai-generated"],
+                    "tiktok": ["ai-generated"],
+                    "naver": ["ai-generated"],
+                },
+            }],
+        }
+        with TemporaryDirectory() as directory:
+            path = self._policy_file(document, directory)
+            decision = evaluate_content_policies(_meta(), default_mode="title", policy_file=path)
+
+        self.assertEqual(decision.post_text, "A useful Short")
+        self.assertEqual(decision.allowed_platforms, frozenset({"instagram", "tiktok", "naver"}))
+        for platform in ("instagram", "tiktok", "naver"):
+            self.assertEqual(decision.disclosures[platform], ("ai-generated",))
+
+    def test_always_cannot_be_combined_with_markers(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = self._policy_file({
+                "version": 1,
+                "rules": [{"name": "bad", "match": {"always": True, "any": ["x"]}}],
+            }, directory)
+            with self.assertRaisesRegex(ValueError, "always"):
+                load_policy_rules(path)
+
+    def test_ai_label_on_unsupported_platform_is_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = self._policy_file({
+                "version": 1,
+                "rules": [{
+                    "name": "ai",
+                    "match": {"always": True},
+                    "disclosures": {"threads": ["ai-generated"]},
+                }],
+            }, directory)
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                load_policy_rules(path)

@@ -20,6 +20,7 @@ from .base import (
     Steps,
     VerifyOutcome,
     click_following_new_page,
+    ensure_ai_label,
     first_match,
     file_input_anywhere,
     norm_text,
@@ -37,6 +38,10 @@ _CREATE = (
     'button:has-text("만들기")',
     'a:has-text("만들기")',
     'text="+ 만들기"',
+    # Clip Creators(clipcreators.naver.com) 신 UI: 우상단 `+ 업로드`
+    'button:has-text("+ 업로드")',
+    'a:has-text("+ 업로드")',
+    'button:has-text("업로드")',
 )
 _UPLOAD_MENU = (
     'button:has-text("클립 업로드")',
@@ -63,6 +68,9 @@ _CATEGORY_TRIGGERS_BY_ORDINAL = (
     ('button:has-text("1차 카테고리")', 'div[role="button"]:has-text("1차 카테고리")', 'text="1차 카테고리"'),
     ('button:has-text("2차 카테고리")', 'div[role="button"]:has-text("2차 카테고리")', 'text="2차 카테고리"'),
 )
+# Clip Creators 상세 정보의 `AI 활용 설정` 토글(바로 아래 `광고·협찬 설정` 토글과 혼동 금지).
+_AI_LABELS = ("AI 활용 설정",)
+_AI_CONFIRM = ('div[role="dialog"] button:has-text("확인")',)
 _SUBMIT = (
     'button:has-text("저장")',  # 실측: 클립 상세 정보 모달의 확정 버튼
     'button:has-text("등록")',
@@ -99,7 +107,7 @@ def _studio_url(cfg) -> str:
         return cfg.naver_clip_url
     if cfg.naver_channel_slug:
         return f"https://creator.tv.naver.com/channel/{cfg.naver_channel_slug}/content/clip"
-    return "https://creator.tv.naver.com/"
+    return "https://clipcreators.naver.com/web/contents/clips"
 
 
 def _select_category(page: Page, steps: Steps, label: str, ordinal: int) -> None:
@@ -175,7 +183,7 @@ def _select_category(page: Page, steps: Steps, label: str, ordinal: int) -> None
             "category",
             f"카테고리 {ordinal + 1}({label}) 선택을 확정하지 못했습니다."
             + (f" 렌더된 옵션: {rendered[:200]}" if rendered else ""),
-            hint="Naver 드롭다운이 DOM 클릭을 무시할 수 있음 — 에이전트(Computer 접근성 클릭)로 선택 후 저장하세요.",
+            hint="Naver 드롭다운이 DOM 클릭을 무시할 수 있음 — 에이전트(Claude in Chrome 스크린샷 클릭)로 선택 후 저장하세요.",
         )
 
 
@@ -221,6 +229,10 @@ def upload(page: Page, job: Job, steps: Steps, cfg) -> Outcome:
     for i, label in enumerate(categories):
         with steps.step(f"category-{i + 1}", hint="드롭다운 표시값까지 확인"):
             _select_category(page, steps, label, i)
+
+    if "ai-generated" in job.disclosures:
+        with steps.step("ai-label", hint="상세 정보 → AI 활용 설정 토글. 확인 못 하면 저장하지 않는다"):
+            ensure_ai_label(page, "naver", _AI_LABELS, confirm=_AI_CONFIRM)
 
     with steps.step("submit", hint="저장 버튼 활성화 확인 후 등록"):
         button = first_match(page, _SUBMIT, timeout_ms=15_000)
