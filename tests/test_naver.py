@@ -16,3 +16,13 @@ class NaverTitleTest(TestCase):
         title = "AI 업데이트 소식"
 
         self.assertEqual(_shorten_title(title), title)
+
+    def test_pipe_title_uses_last_segment_that_fits(self) -> None:
+        title = "출항 시간 딱 맞춰 왔는데… 배가 떠났습니다 | 선상낚시 처음 가면 100% 하는 실수"
+
+        self.assertEqual(_shorten_title(title), "선상낚시 처음 가면 100% 하는 실수")
+
+    def test_pipe_title_falls_back_to_truncation(self) -> None:
+        title = ("가" * 30) + " | " + ("나" * 30)
+
+        self.assertEqual(_utf16_units(_shorten_title(title)), 24)

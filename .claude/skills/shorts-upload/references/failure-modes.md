@@ -511,3 +511,19 @@ unscoped before clicking the crop toggle. The caption editor is now
 can occasionally leave the profile page instead of opening the composer; the
 uploader retries once from the home feed.
 
+## 24. Naver Clip Creators upload form (2026-10)
+
+**Symptom:** Upload stops at the menu, title, or AI step on
+`clipcreators.naver.com`.
+
+**Facts (verified 2026-10-25):** `+ 업로드` opens a menu whose
+`[role=menuitem]` `동영상 업로드` leads to `/web/draft/<id>`. Attaching a file
+creates a private 초안 immediately. The form has no title field: the required
+`설명` textarea (`#content-description`, 300 chars) receives the 24-unit title
+rule output (for `A | B` titles, the last segment that fits). Categories are
+`1차 카테고리` / `2차 카테고리` buttons. `AI 활용 설정` is
+`button[role=switch][aria-label="AI 활용 설정"]`; the ⓘ tooltip next to the label
+has `aria-pressed` and must never be treated as the switch. Submit with
+`button[type=submit]` `등록`; `임시저장` only saves a draft. The list then shows the
+description as the clip title with status `공개`.
+

@@ -44,6 +44,9 @@ _CREATE = (
     'button:has-text("업로드")',
 )
 _UPLOAD_MENU = (
+    # Clip Creators 신 UI(2026-10): `+ 업로드` → role=menuitem `동영상 업로드` / `새 재생목록`.
+    # 사이드바 `클립 AI 하이라이트`를 잘못 집지 않도록 이 후보를 맨 앞에 둔다.
+    '[role="menuitem"]:has-text("동영상 업로드")',
     'button:has-text("클립 업로드")',
     'a:has-text("클립 업로드")',
     '[role="menuitem"]:has-text("클립")',
@@ -58,6 +61,10 @@ _UPLOAD_PROGRESS = (
     'text="제목"',
 )
 _TITLE_FIELD = (
+    # Clip Creators 신 UI(2026-10)는 제목 칸 없이 `설명`(300자, 필수)만 있다.
+    # 사용자 결정: 여기에 24자 규칙으로 고른 제목(키워드 구간)을 그대로 넣는다.
+    'textarea#content-description',
+    'textarea[name="description"]',
     'input[maxlength="24"]',
     'textarea[maxlength="24"]',
     'input[placeholder*="제목"]',
@@ -72,7 +79,10 @@ _CATEGORY_TRIGGERS_BY_ORDINAL = (
 _AI_LABELS = ("AI 활용 설정",)
 _AI_CONFIRM = ('div[role="dialog"] button:has-text("확인")',)
 _SUBMIT = (
-    'button:has-text("저장")',  # 실측: 클립 상세 정보 모달의 확정 버튼
+    # Clip Creators 신 UI(2026-10): `임시저장` 옆의 type=submit `등록`.
+    'button[type="submit"]:text-is("등록")',
+    # 주의: has-text("저장")는 `임시저장`에도 걸려 초안만 저장된다 — 정확히 일치만 허용.
+    'button:text-is("저장")',  # 실측: 구 Creator Studio 클립 상세 정보 모달의 확정 버튼
     'button:has-text("등록")',
     'button:has-text("업로드")',
     'button:has-text("올리기")',
@@ -88,6 +98,13 @@ def _utf16_units(text: str) -> int:
 def _shorten_title(text: str, limit: int = TITLE_LIMIT) -> str:
     if _utf16_units(text) <= limit:
         return text
+
+    # `후킹 문장 | 키워드 제목` 형태면 중간에서 자르기보다 통째로 들어가는 구간을 쓴다.
+    # 뒤쪽 구간(키워드 제목)을 우선한다.
+    if "|" in text:
+        for segment in reversed([s.strip() for s in text.split("|")]):
+            if segment and _utf16_units(segment) <= limit:
+                return segment
 
     suffix = "…"
     budget = limit - _utf16_units(suffix)
@@ -218,7 +235,7 @@ def upload(page: Page, job: Job, steps: Steps, cfg) -> Outcome:
                 hint="failure-mode #20: 모달이 조용히 닫혔다면 업로드는 시작되지 않은 것. 완료로 간주 금지, 에이전트로 재시도.",
             ) from exc
 
-    with steps.step("title", hint=f"제목 {TITLE_LIMIT}자 제한 — 축약본 입력 후 값 재확인"):
+    with steps.step("title", hint=f"제목(신 UI는 설명 칸) {TITLE_LIMIT}자 규칙 적용본 입력 후 값 재확인"):
         field = first_match(page, _TITLE_FIELD, timeout_ms=30_000)
         field.click()
         field.fill(posted_title)

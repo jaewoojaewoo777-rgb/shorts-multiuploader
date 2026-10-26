@@ -87,6 +87,23 @@ class EnsureAiLabelTest(TestCase):
         ensure_ai_label(page, "instagram", ("AI 레이블 추가",), timeout_ms=800)
         self.assertEqual(page.locator("input").get_attribute("aria-checked"), "true")
 
+    def test_naver_tooltip_button_is_not_mistaken_for_switch(self) -> None:
+        # Naver Clip Creators 실측 구조: 라벨 옆 툴팁 버튼이 aria-pressed 를 가진다
+        page = self._page(
+            '<div class="item"><div class="text"><div class="title"><span>AI 활용 설정</span>'
+            '<button type="button" aria-pressed="false" onclick="this.setAttribute(\'aria-pressed\',\'true\')">i</button>'
+            '</div><span>AI를 활용한 콘텐츠인 경우</span></div>'
+            '<button type="button" role="switch" aria-checked="false" aria-label="AI 활용 설정" onclick="t(this)"></button></div>'
+        )
+        ensure_ai_label(page, "naver", ("AI 활용 설정",), timeout_ms=800)
+        self.assertEqual(page.locator('[role="switch"]').get_attribute("aria-checked"), "true")
+        self.assertEqual(page.locator("button[aria-pressed]").get_attribute("aria-pressed"), "false")
+
+    def test_tooltip_only_fails_closed(self) -> None:
+        self._assert_fail_closed(self._page(
+            '<div><span>AI 활용 설정</span><button type="button" aria-pressed="false">i</button></div>'
+        ))
+
     def test_missing_label_fails_closed(self) -> None:
         self._assert_fail_closed(self._page('<div><span>광고 · 협찬 설정</span><div role="switch" aria-checked="false">o</div></div>'))
 

@@ -444,7 +444,9 @@ def require_no_login_redirect(page: Page, patterns: Sequence[str], platform: str
 
 AI_LABEL_STEP = "ai-label"
 _SWITCH_MARK = "data-shorts-ai-switch"
-_SWITCH_CONTROLS = '[role="switch"], input[type="checkbox"], [aria-checked], [aria-pressed]'
+# aria-pressed 는 제외: 실측(Naver)에서 라벨 옆 툴팁(ⓘ) 버튼이 aria-pressed 를 가져
+# 진짜 토글 대신 툴팁을 "켜짐"으로 오인할 수 있었다.
+_SWITCH_CONTROLS = '[role="switch"], input[type="checkbox"], [aria-checked]'
 
 
 def _ai_label_failure(platform: str, message: str) -> StepFailure:
@@ -508,21 +510,30 @@ def ensure_ai_label(
     root.locator(f"[{_SWITCH_MARK}]").evaluate_all(
         f"els => els.forEach(e => e.removeAttribute('{_SWITCH_MARK}'))"
     )
-    found = label_el.evaluate(
-        "(el, [sel, mark]) => {"
-        " let node = el;"
-        " for (let i = 0; i < 6 && node; i++) {"
-        # 실측(TikTok): Switch__content[aria-checked] 안에 input[role=switch]가 중첩돼
-        # 있다 — 다른 후보에 포함된 후보는 같은 스위치로 보고 바깥 요소만 센다.
-        "  const all = [...node.querySelectorAll(sel)];"
-        "  const hits = all.filter(h => !all.some(o => o !== h && o.contains(h)));"
-        "  if (hits.length === 1) { hits[0].setAttribute(mark, '1'); return 'one'; }"
-        "  if (hits.length > 1) return 'many';"
-        "  node = node.parentElement;"
-        " }"
-        " return 'none'; }",
-        [_SWITCH_CONTROLS, _SWITCH_MARK],
-    )
+    # 1순위: 라벨 텍스트를 접근성 이름으로 가진 스위치(예: Naver aria-label="AI 활용 설정").
+    named = root.locator(", ".join(f'[role="switch"][aria-label="{label}"]' for label in labels))
+    named_count = named.count()
+    if named_count > 1:
+        raise _ai_label_failure(platform, "같은 이름의 AI 표시 토글이 여러 개라 특정 불가")
+    found = "one" if named_count == 1 else None
+    if found:
+        named.first.evaluate(f"el => el.setAttribute('{_SWITCH_MARK}', '1')")
+    else:
+        found = label_el.evaluate(
+            "(el, [sel, mark]) => {"
+            " let node = el;"
+            " for (let i = 0; i < 6 && node; i++) {"
+            # 실측(TikTok): Switch__content[aria-checked] 안에 input[role=switch]가 중첩돼
+            # 있다 — 다른 후보에 포함된 후보는 같은 스위치로 보고 바깥 요소만 센다.
+            "  const all = [...node.querySelectorAll(sel)];"
+            "  const hits = all.filter(h => !all.some(o => o !== h && o.contains(h)));"
+            "  if (hits.length === 1) { hits[0].setAttribute(mark, '1'); return 'one'; }"
+            "  if (hits.length > 1) return 'many';"
+            "  node = node.parentElement;"
+            " }"
+            " return 'none'; }",
+            [_SWITCH_CONTROLS, _SWITCH_MARK],
+        )
     if found != "one":
         reason = "토글 후보가 여러 개라 특정 불가" if found == "many" else "라벨 근처에 토글이 없음"
         raise _ai_label_failure(platform, f"AI 표시 토글을 특정하지 못함({reason})")
